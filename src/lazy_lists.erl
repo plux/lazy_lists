@@ -19,6 +19,7 @@
 -export([limit/2]).
 -export([zip/2]).
 -export([unzip/1]).
+-export([cons/2]).
 -export([append/2]).
 -export([sum/1]).
 -export([seq/0, seq/1, seq/2]).
@@ -51,6 +52,10 @@ new(Gen) when is_function(Gen, 1) ->
 -spec new(lazy_gens:gen(T), term()) -> lazy_list(T).
 new(Gen, Acc) ->
     #lazy_list{gen=Gen, acc=Acc}.
+
+-spec cons(A, lazy_list(B)) -> lazy_list(A | B).
+cons(X, #lazy_list{} = L) ->
+    append([X], L).
 
 -spec append(maybe_lazy_list(A), maybe_lazy_list(B)) -> lazy_list(A | B).
 append(A, B) when is_list(A) ->
@@ -150,11 +155,8 @@ nth_(N, #lazy_list{} = L) ->
     Val.
 
 -spec nth(pos_integer(), lazy_list(T)) -> {T, lazy_list(T)}.
-nth(1, #lazy_list{} = L) ->
-    decons(L);
 nth(N, #lazy_list{} = L0) when N > 1 ->
-    {_, L} = decons(L0),
-    nth(N-1, L).
+    decons(drop(N-1, L0)).
 
 -spec take(non_neg_integer(), lazy_list(T)) -> {[T], lazy_list(T)}.
 take(N, #lazy_list{} = L) when N >= 0 ->
@@ -164,6 +166,12 @@ take(N, #lazy_list{} = L) when N >= 0 ->
 take_(N, #lazy_list{} = L) when N >= 0 ->
     {List, _} = take(N, [], L),
     List.
+
+-spec drop(non_neg_integer(), lazy_list(T)) -> lazy_list(T).
+drop(0, #lazy_list{} = L) ->
+    L;
+drop(N, #lazy_list{} = L) when N > 0 ->
+    drop(N-1, tail(L)).
 
 -spec take_while(predicate(T), lazy_list(T)) -> {[T], lazy_list(T)}.
 take_while(Pred, #lazy_list{} = L) when is_function(Pred, 1) ->
@@ -296,5 +304,11 @@ fizzbuzz_test() ->
     fizzbuzz = nth_(999990, L0),
     fizz     = nth_(999999, L0),
     999998   = nth_(999998, L0).
+
+cons_test() ->
+    L       = seq(),
+    {1, L2} = decons(L),
+    [1,2,3] = take_(3, L),
+    [1,2,3] = take_(3, cons(1, L2)).
 
 -endif.

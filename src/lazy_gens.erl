@@ -7,6 +7,7 @@
 %%%_* Exports ==========================================================
 -export([seq/0, seq/1, seq/2]).
 -export([rand/0, rand/1, rand/2]).
+-export([fib/0]).
 
 -export_type([gen/0, gen/1]).
 
@@ -41,6 +42,11 @@ rand(N) ->
 rand(N, State0) ->
     fun(undefined) -> rand:uniform_s(N, State0);
        (State)     -> rand:uniform_s(N, State)
+    end.
+
+fib() ->
+    fun(undefined) -> {1, {0, 1}};
+       ({A, B})    -> {A+B, {B, A+B}}
     end.
 
 %%%_* Tests ============================================================
