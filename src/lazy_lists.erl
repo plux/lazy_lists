@@ -11,6 +11,8 @@
 -export([filter/2]).
 -export([nth/2, nth_/2]).
 -export([take/2, take_/2]).
+-export([drop/2]).
+-export([drop_while/2]).
 -export([take_while/2, take_while_/2]).
 -export([map/2]).
 -export([fold/3]).
@@ -24,6 +26,7 @@
 -export([sum/1]).
 -export([seq/0, seq/1, seq/2]).
 -export([rand/0, rand/1, rand/2]).
+-export([chunk/2]).
 
 -export_type([lazy_list/0, lazy_list/1]).
 
@@ -36,18 +39,20 @@
 -opaque lazy_list() :: #lazy_list{}.
 -opaque lazy_list(T) :: #lazy_list{gen :: lazy_gens:gen(T)}.
 
--type maybe_lazy_list(T) :: [T] | lazy_list(T).
+-type maybe_lazy_list(T) :: [T] | lazy_list(T) | lazy_gens:gen(T).
 -type predicate(T) :: fun((T) -> boolean()).
 
 %%%_* API ==============================================================
--spec new([T] | lazy_gens:gen(T)) -> lazy_list(T).
+-spec new(maybe_lazy_list(T)) -> lazy_list(T).
 new(L) when is_list(L) ->
     List = fun([H|T]) -> {H, T};
               ([])    -> fin
            end,
     new(List, L);
 new(Gen) when is_function(Gen, 1) ->
-    new(Gen, undefined).
+    new(Gen, undefined);
+new(#lazy_list{} = L) ->
+    L.
 
 -spec new(lazy_gens:gen(T), term()) -> lazy_list(T).
 new(Gen, Acc) ->
@@ -58,11 +63,7 @@ cons(X, #lazy_list{} = L) ->
     append([X], L).
 
 -spec append(maybe_lazy_list(A), maybe_lazy_list(B)) -> lazy_list(A | B).
-append(A, B) when is_list(A) ->
-    append(new(A), B);
-append(A, B) when is_list(B) ->
-    append(A, new(B));
-append(#lazy_list{} = A0, #lazy_list{} = B0) ->
+append(A0, B0) ->
     Append = fun({A, B}) ->
                      case decons(A) of
                          empty ->
@@ -74,14 +75,10 @@ append(#lazy_list{} = A0, #lazy_list{} = B0) ->
                              {Head, {Tail, B}}
                      end
              end,
-    new(Append, {A0, B0}).
+    new(Append, {new(A0), new(B0)}).
 
 -spec zip(maybe_lazy_list(A), maybe_lazy_list(B)) -> lazy_list({A, B}).
-zip(A, B) when is_list(A) ->
-    zip(new(A), B);
-zip(A, B) when is_list(B) ->
-    zip(A, new(B));
-zip(#lazy_list{} = A0, #lazy_list{} = B0) ->
+zip(A0, B0) ->
     Zip = fun({A, B}) ->
                   case {decons(A), decons(B)} of
                       {empty, _} -> fin;
@@ -90,7 +87,7 @@ zip(#lazy_list{} = A0, #lazy_list{} = B0) ->
                           {{HeadA, HeadB}, {TailA, TailB}}
                   end
           end,
-    new(Zip, {A0, B0}).
+    new(Zip, {new(A0), new(B0)}).
 
 -spec unzip(lazy_list({A, B})) -> {lazy_list(A), lazy_list(B)}.
 unzip(#lazy_list{} = L0) ->
@@ -114,8 +111,6 @@ tail(#lazy_list{} = L) ->
     Tail.
 
 -spec filter(predicate(T), maybe_lazy_list(T)) -> lazy_list(T).
-filter(Pred, List) when is_list(List) ->
-    filter(Pred, new(List));
 filter(Pred, L0) when is_function(Pred, 1) ->
     Filter = fun Filter(L) ->
                      case decons(L) of
@@ -128,11 +123,9 @@ filter(Pred, L0) when is_function(Pred, 1) ->
                              fin
                      end
              end,
-    new(Filter, L0).
+    new(Filter, new(L0)).
 
 -spec map(fun((A) -> B), maybe_lazy_list(A)) -> lazy_list(B).
-map(Fun, List) when is_list(List) ->
-    map(Fun, new(List));
 map(Fun, L0) when is_function(Fun, 1) ->
     Map = fun(L) ->
                   case decons(L) of
@@ -140,7 +133,7 @@ map(Fun, L0) when is_function(Fun, 1) ->
                       empty        -> fin
                   end
           end,
-    new(Map, L0).
+    new(Map, new(L0)).
 
 -spec fold(fun((T, Acc) -> Acc), Acc, lazy_list(T)) -> Acc.
 fold(Fun, Acc, #lazy_list{} = L0) when is_function(Fun, 2) ->
@@ -173,6 +166,14 @@ drop(0, #lazy_list{} = L) ->
 drop(N, #lazy_list{} = L) when N > 0 ->
     drop(N-1, tail(L)).
 
+-spec drop_while(predicate(T), lazy_list(T)) -> lazy_list(T).
+drop_while(Pred, L) ->
+    {Head, Tail} = decons(L),
+    case Pred(Head) of
+        true  -> drop_while(Pred, Tail);
+        false -> cons(Head, Tail)
+    end.
+
 -spec take_while(predicate(T), lazy_list(T)) -> {[T], lazy_list(T)}.
 take_while(Pred, #lazy_list{} = L) when is_function(Pred, 1) ->
     take_while(Pred, [], L).
@@ -200,6 +201,16 @@ limit(Len0, #lazy_list{} = L0) ->
                      end
              end,
     new(MaxLen, {Len0, L0}).
+
+-spec chunk(pos_integer(), lazy_list(T)) -> lazy_list([T]).
+chunk(N, #lazy_list{} = L0) when N > 1 ->
+    Chunk = fun(L) ->
+                    case take(N, L) of
+                        {[], _}       -> fin;
+                        {Elems, Tail} -> {Elems, Tail}
+                    end
+            end,
+    new(Chunk, L0).
 
 -spec to_list(lazy_list(T)) -> [T].
 to_list(#lazy_list{} = L) ->
@@ -260,7 +271,7 @@ to_list(Vals, L0) ->
     end.
 
 %%%_* Tests ============================================================
--ifndef(TEST).
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
 lazy_lists_test() ->
