@@ -19,15 +19,19 @@
 -export([decons/1]).
 -export([to_list/1]).
 -export([limit/2]).
+-export([while/2]).
 -export([zip/2]).
 -export([unzip/1]).
 -export([cons/2]).
 -export([append/2]).
 -export([sum/1]).
--export([seq/0, seq/1, seq/2]).
--export([rand/0, rand/1, rand/2]).
 -export([chunk/2]).
 
+%%%_* Generators -------------------------------------------------------
+-export([seq/0, seq/1, seq/2, seq/3]).
+-export([rand/0, rand/1, rand/2]).
+
+%%%_* Types ------------------------------------------------------------
 -export_type([lazy_list/0, lazy_list/1]).
 
 %%%_* Records ==========================================================
@@ -160,6 +164,15 @@ take_(N, #lazy_list{} = L) when N >= 0 ->
     {List, _} = take(N, [], L),
     List.
 
+-spec take_while(predicate(T), lazy_list(T)) -> {[T], lazy_list(T)}.
+take_while(Pred, #lazy_list{} = L) when is_function(Pred, 1) ->
+    take_while(Pred, [], L).
+
+-spec take_while_(predicate(T), lazy_list(T)) -> [T].
+take_while_(Pred, #lazy_list{} = L) when is_function(Pred, 1) ->
+    {List, _} = take_while(Pred, [], L),
+    List.
+
 -spec drop(non_neg_integer(), lazy_list(T)) -> lazy_list(T).
 drop(0, #lazy_list{} = L) ->
     L;
@@ -173,15 +186,6 @@ drop_while(Pred, L) ->
         true  -> drop_while(Pred, Tail);
         false -> cons(Head, Tail)
     end.
-
--spec take_while(predicate(T), lazy_list(T)) -> {[T], lazy_list(T)}.
-take_while(Pred, #lazy_list{} = L) when is_function(Pred, 1) ->
-    take_while(Pred, [], L).
-
--spec take_while_(predicate(T), lazy_list(T)) -> [T].
-take_while_(Pred, #lazy_list{} = L) when is_function(Pred, 1) ->
-    {List, _} = take_while(Pred, [], L),
-    List.
 
 -spec decons(lazy_list(T)) -> {T, lazy_list(T)} | empty.
 decons(#lazy_list{gen=Gen, acc=Acc0}) ->
@@ -201,6 +205,21 @@ limit(Len0, #lazy_list{} = L0) ->
                      end
              end,
     new(MaxLen, {Len0, L0}).
+
+-spec while(predicate(T), lazy_list(T)) -> lazy_list(T).
+while(Pred, L0) ->
+    While = fun(L) ->
+                    case decons(L) of
+                        {Head, Tail} ->
+                            case Pred(Head) of
+                                true -> {Head, Tail};
+                                false -> fin
+                            end;
+                        empty ->
+                            fin
+                    end
+            end,
+    new(While, L0).
 
 -spec chunk(pos_integer(), lazy_list(T)) -> lazy_list([T]).
 chunk(N, #lazy_list{} = L0) when N > 1 ->
@@ -229,8 +248,12 @@ seq(Start) ->
     new(lazy_gens:seq(Start)).
 
 -spec seq(integer(), integer()) -> lazy_list(integer()).
-seq(Start, Steps) ->
-    new(lazy_gens:seq(Start, Steps)).
+seq(Start, Step) ->
+    new(lazy_gens:seq(Start, Step)).
+
+-spec seq(integer(), integer(), integer()) -> lazy_list(integer()).
+seq(Start, Step, End) ->
+    new(lazy_gens:seq(Start, Step, End)).
 
 -spec rand() -> lazy_list(pos_integer()).
 rand() ->
@@ -321,5 +344,9 @@ cons_test() ->
     {1, L2} = decons(L),
     [1,2,3] = take_(3, L),
     [1,2,3] = take_(3, cons(1, L2)).
+
+seq_test() ->
+    L = seq(1,1,3),
+    [1,2,3] = to_list(L).
 
 -endif.

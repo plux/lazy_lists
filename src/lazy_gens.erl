@@ -5,7 +5,7 @@
 -module(lazy_gens).
 
 %%%_* Exports ==========================================================
--export([seq/0, seq/1, seq/2]).
+-export([seq/0, seq/1, seq/2, seq/3]).
 -export([rand/0, rand/1, rand/2]).
 -export([fib/0]).
 
@@ -28,6 +28,14 @@ seq(Start) ->
 seq(Start, Step) ->
     fun(undefined) -> {Start, Start};
        (Acc)       -> {Acc+Step, Acc+Step}
+    end.
+
+-spec seq(integer(), integer(), integer()) -> gen(integer()).
+seq(Start, Step, End) ->
+    fun(undefined) -> {Start, Start};
+       (Acc) when Step > 0, Acc >= End -> fin;
+       (Acc) when Step < 0, Acc =< End -> fin;
+       (Acc)                           -> {Acc+Step, Acc+Step}
     end.
 
 -spec rand() -> gen(pos_integer()).
