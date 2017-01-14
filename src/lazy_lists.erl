@@ -75,7 +75,12 @@ cons(X, #lazy_list{} = L) ->
 
 -spec append(maybe_lazy_list(A), maybe_lazy_list(B)) -> lazy_list(A | B).
 append(A0, B0) ->
-    Append = fun({A, B}) ->
+    Append = fun(#lazy_list{} = B) ->
+                     case decons(B) of
+                         empty        -> fin;
+                         {Head, Tail} -> {Head, Tail}
+                     end;
+                ({A, B}) ->
                      case decons(A) of
                          empty ->
                              case decons(B) of
