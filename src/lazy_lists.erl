@@ -16,7 +16,7 @@
 -export([take_while/2, take_while_/2]).
 -export([map/2]).
 -export([fold/3]).
--export([decons/1]).
+-export([uncons/1]).
 -export([to_list/1]).
 -export([limit/2]).
 -export([while/2]).
@@ -76,14 +76,14 @@ cons(X, #lazy_list{} = L) ->
 -spec append(maybe_lazy_list(A), maybe_lazy_list(B)) -> lazy_list(A | B).
 append(A0, B0) ->
     Append = fun(#lazy_list{} = B) ->
-                     case decons(B) of
+                     case uncons(B) of
                          empty        -> fin;
                          {Head, Tail} -> {Head, Tail}
                      end;
                 ({A, B}) ->
-                     case decons(A) of
+                     case uncons(A) of
                          empty ->
-                             case decons(B) of
+                             case uncons(B) of
                                  empty        -> fin;
                                  {Head, Tail} -> {Head, {A, Tail}}
                              end;
@@ -96,7 +96,7 @@ append(A0, B0) ->
 -spec zip(maybe_lazy_list(A), maybe_lazy_list(B)) -> lazy_list({A, B}).
 zip(A0, B0) ->
     Zip = fun({A, B}) ->
-                  case {decons(A), decons(B)} of
+                  case {uncons(A), uncons(B)} of
                       {empty, _} -> fin;
                       {_, empty} -> fin;
                       {{HeadA, TailA}, {HeadB, TailB}} ->
@@ -108,7 +108,7 @@ zip(A0, B0) ->
 -spec unzip(lazy_list({A, B})) -> {lazy_list(A), lazy_list(B)}.
 unzip(#lazy_list{} = L0) ->
     Unzip = fun({Dir, Acc}) ->
-                    case {Dir, decons(Acc)} of
+                    case {Dir, uncons(Acc)} of
                         {left, {{Head, _}, L}}  -> {Head, {left, L}};
                         {right, {{_, Head}, L}} -> {Head, {right, L}};
                         {_, empty}              -> fin
@@ -118,18 +118,18 @@ unzip(#lazy_list{} = L0) ->
 
 -spec head(lazy_list(T)) -> T.
 head(#lazy_list{} = L) ->
-    {Head, _Tail} = decons(L),
+    {Head, _Tail} = uncons(L),
     Head.
 
 -spec tail(lazy_list(T)) -> lazy_list(T).
 tail(#lazy_list{} = L) ->
-    {_Head, Tail} = decons(L),
+    {_Head, Tail} = uncons(L),
     Tail.
 
 -spec filter(predicate(T), maybe_lazy_list(T)) -> lazy_list(T).
 filter(Pred, L0) when is_function(Pred, 1) ->
     Filter = fun Filter(L) ->
-                     case decons(L) of
+                     case uncons(L) of
                          {Head, Tail} ->
                              case Pred(Head) of
                                  true  -> {Head, Tail};
@@ -144,7 +144,7 @@ filter(Pred, L0) when is_function(Pred, 1) ->
 -spec map(fun((A) -> B), maybe_lazy_list(A)) -> lazy_list(B).
 map(Fun, L0) when is_function(Fun, 1) ->
     Map = fun(L) ->
-                  case decons(L) of
+                  case uncons(L) of
                       {Head, Tail} -> {Fun(Head), Tail};
                       empty        -> fin
                   end
@@ -153,7 +153,7 @@ map(Fun, L0) when is_function(Fun, 1) ->
 
 -spec fold(fun((T, Acc) -> Acc), Acc, lazy_list(T)) -> Acc.
 fold(Fun, Acc, #lazy_list{} = L0) when is_function(Fun, 2) ->
-    case decons(L0) of
+    case uncons(L0) of
         {Val, L} -> fold(Fun, Fun(Val, Acc), L);
         empty    -> Acc
     end.
@@ -165,7 +165,7 @@ nth_(N, #lazy_list{} = L) ->
 
 -spec nth(pos_integer(), lazy_list(T)) -> {T, lazy_list(T)}.
 nth(N, #lazy_list{} = L0) when N >= 1 ->
-    decons(drop(N-1, L0)).
+    uncons(drop(N-1, L0)).
 
 -spec take(non_neg_integer(), lazy_list(T)) -> {[T], lazy_list(T)}.
 take(N, #lazy_list{} = L) when N >= 0 ->
@@ -193,14 +193,14 @@ drop(N, #lazy_list{} = L) when N > 0 ->
 
 -spec drop_while(predicate(T), lazy_list(T)) -> lazy_list(T).
 drop_while(Pred, L) ->
-    {Head, Tail} = decons(L),
+    {Head, Tail} = uncons(L),
     case Pred(Head) of
         true  -> drop_while(Pred, Tail);
         false -> cons(Head, Tail)
     end.
 
--spec decons(lazy_list(T)) -> {T, lazy_list(T)} | empty.
-decons(#lazy_list{gen=Gen, acc=Acc0}) ->
+-spec uncons(lazy_list(T)) -> {T, lazy_list(T)} | empty.
+uncons(#lazy_list{gen=Gen, acc=Acc0}) ->
     case Gen(Acc0) of
         {Val, Acc} -> {Val, new(Gen, Acc)};
         fin        -> empty
@@ -211,7 +211,7 @@ limit(Len0, #lazy_list{} = L0) ->
     MaxLen = fun({0, _}) ->
                      fin;
                 ({Len, L}) ->
-                     case decons(L) of
+                     case uncons(L) of
                          {Head, Tail} -> {Head, {Len-1, Tail}};
                          empty        -> fin
                      end
@@ -221,7 +221,7 @@ limit(Len0, #lazy_list{} = L0) ->
 -spec while(predicate(T), lazy_list(T)) -> lazy_list(T).
 while(Pred, L0) when is_function(Pred, 1) ->
     While = fun(L) ->
-                    case decons(L) of
+                    case uncons(L) of
                         {Head, Tail} ->
                             case Pred(Head) of
                                 true -> {Head, Tail};
@@ -248,12 +248,12 @@ every(1, #lazy_list{} = L0) ->
     L0;
 every(Nth, #lazy_list{} = L0) when Nth > 1 ->
     Every = fun Every({N, L}) when N rem Nth =:= 0 ->
-                    case decons(L) of
+                    case uncons(L) of
                         {Head, Tail} -> {Head, {N+1, Tail}};
                         empty        -> fin
                     end;
                 Every({N, L}) ->
-                    case decons(L) of
+                    case uncons(L) of
                         {_Head, Tail} ->
                             Every({N+1, Tail});
                         empty ->
@@ -265,16 +265,16 @@ every(Nth, #lazy_list{} = L0) when Nth > 1 ->
 -spec interleave(maybe_lazy_list(A), maybe_lazy_list(B)) -> lazy_list(A | B).
 interleave(A0, B0) ->
     Interleave = fun({#lazy_list{} = A, #lazy_list{} = B}) ->
-                         case decons(A) of
+                         case uncons(A) of
                              {Head, Tail} -> {Head, {B, Tail}};
                              empty        ->
-                                 case decons(B) of
+                                 case uncons(B) of
                                      {Head, Tail} -> {Head, Tail};
                                      empty        -> fin
                                  end
                          end;
                     (#lazy_list{} = L) ->
-                         case decons(L) of
+                         case uncons(L) of
                              {Head, Tail} -> {Head, Tail};
                              empty        -> fin
                          end
@@ -284,11 +284,11 @@ interleave(A0, B0) ->
 -spec repeat(maybe_lazy_list(T)) -> lazy_list(T).
 repeat(L0) ->
     Repeat = fun(L) ->
-                     case decons(L) of
+                     case uncons(L) of
                          {Head, Tail} ->
                              {Head, Tail};
                          empty ->
-                             case decons(new(L0)) of
+                             case uncons(new(L0)) of
                                  {Head, Tail} ->
                                      {Head, Tail};
                                  empty ->
@@ -301,7 +301,7 @@ repeat(L0) ->
 -spec dedup(maybe_lazy_list(T)) -> lazy_list(T).
 dedup(L0) ->
     Dedup = fun Dedup({Prev, L}) ->
-                    case decons(L) of
+                    case uncons(L) of
                         {Prev, Tail} -> Dedup({Prev, Tail});
                         {Head, Tail} -> {Head, {Head, Tail}};
                         empty        -> fin
@@ -362,13 +362,13 @@ perms(L) ->
 take(0, Vals, L) ->
     {lists:reverse(Vals), L};
 take(N, Vals, L0) ->
-    case decons(L0) of
+    case uncons(L0) of
         {Val, L} -> take(N-1, [Val|Vals], L);
         empty    -> {lists:reverse(Vals), L0}
     end.
 
 take_while(Pred, Vals, L0)  ->
-    case decons(L0) of
+    case uncons(L0) of
         {Val, L} ->
             case Pred(Val) of
                 true  -> take_while(Pred, [Val|Vals], L);
@@ -379,7 +379,7 @@ take_while(Pred, Vals, L0)  ->
     end.
 
 to_list(Vals, L0) ->
-    case decons(L0) of
+    case uncons(L0) of
         {Val, L} -> to_list([Val|Vals], L);
         empty    -> lists:reverse(Vals)
     end.
@@ -438,7 +438,7 @@ repeat_test() ->
 
 cons_test() ->
     L       = seq(),
-    {1, L2} = decons(L),
+    {1, L2} = uncons(L),
     [1,2,3] = take_(3, L),
     [1,2,3] = take_(3, cons(1, L2)).
 
