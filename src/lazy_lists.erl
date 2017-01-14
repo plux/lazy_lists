@@ -25,11 +25,18 @@
 -export([cons/2]).
 -export([append/2]).
 -export([sum/1]).
+-export([length/1]).
 -export([chunk/2]).
+-export([every/2]).
+-export([interleave/2]).
+-export([repeat/1]).
+-export([dedup/1]).
 
 %%%_* Generators -------------------------------------------------------
 -export([seq/0, seq/1, seq/2, seq/3]).
 -export([rand/0, rand/1, rand/2]).
+-export([fib/0]).
+-export([perms/1]).
 
 %%%_* Types ------------------------------------------------------------
 -export_type([lazy_list/0, lazy_list/1]).
@@ -152,7 +159,7 @@ nth_(N, #lazy_list{} = L) ->
     Val.
 
 -spec nth(pos_integer(), lazy_list(T)) -> {T, lazy_list(T)}.
-nth(N, #lazy_list{} = L0) when N > 1 ->
+nth(N, #lazy_list{} = L0) when N >= 1 ->
     decons(drop(N-1, L0)).
 
 -spec take(non_neg_integer(), lazy_list(T)) -> {[T], lazy_list(T)}.
@@ -207,7 +214,7 @@ limit(Len0, #lazy_list{} = L0) ->
     new(MaxLen, {Len0, L0}).
 
 -spec while(predicate(T), lazy_list(T)) -> lazy_list(T).
-while(Pred, L0) ->
+while(Pred, L0) when is_function(Pred, 1) ->
     While = fun(L) ->
                     case decons(L) of
                         {Head, Tail} ->
@@ -221,15 +228,81 @@ while(Pred, L0) ->
             end,
     new(While, L0).
 
--spec chunk(pos_integer(), lazy_list(T)) -> lazy_list([T]).
-chunk(N, #lazy_list{} = L0) when N > 1 ->
+-spec chunk(pos_integer(), maybe_lazy_list(T)) -> lazy_list([T]).
+chunk(N, L0) when N > 1 ->
     Chunk = fun(L) ->
                     case take(N, L) of
                         {[], _}       -> fin;
                         {Elems, Tail} -> {Elems, Tail}
                     end
             end,
-    new(Chunk, L0).
+    new(Chunk, new(L0)).
+
+-spec every(pos_integer(), lazy_list(T)) -> lazy_list(T).
+every(1, #lazy_list{} = L0) ->
+    L0;
+every(Nth, #lazy_list{} = L0) when Nth > 1 ->
+    Every = fun Every({N, L}) when N rem Nth =:= 0 ->
+                    case decons(L) of
+                        {Head, Tail} -> {Head, {N+1, Tail}};
+                        empty        -> fin
+                    end;
+                Every({N, L}) ->
+                    case decons(L) of
+                        {_Head, Tail} ->
+                            Every({N+1, Tail});
+                        empty ->
+                            fin
+                    end
+            end,
+    new(Every, {1, L0}).
+
+-spec interleave(maybe_lazy_list(A), maybe_lazy_list(B)) -> lazy_list(A | B).
+interleave(A0, B0) ->
+    Interleave = fun({#lazy_list{} = A, #lazy_list{} = B}) ->
+                         case decons(A) of
+                             {Head, Tail} -> {Head, {B, Tail}};
+                             empty        ->
+                                 case decons(B) of
+                                     {Head, Tail} -> {Head, Tail};
+                                     empty        -> fin
+                                 end
+                         end;
+                    (#lazy_list{} = L) ->
+                         case decons(L) of
+                             {Head, Tail} -> {Head, Tail};
+                             empty        -> fin
+                         end
+                 end,
+    new(Interleave, {new(A0), new(B0)}).
+
+-spec repeat(maybe_lazy_list(T)) -> lazy_list(T).
+repeat(L0) ->
+    Repeat = fun(L) ->
+                     case decons(L) of
+                         {Head, Tail} ->
+                             {Head, Tail};
+                         empty ->
+                             case decons(new(L0)) of
+                                 {Head, Tail} ->
+                                     {Head, Tail};
+                                 empty ->
+                                     fin
+                             end
+                     end
+             end,
+    new(Repeat, new(L0)).
+
+-spec dedup(maybe_lazy_list(T)) -> lazy_list(T).
+dedup(L0) ->
+    Dedup = fun Dedup({Prev, L}) ->
+                    case decons(L) of
+                        {Prev, Tail} -> Dedup({Prev, Tail});
+                        {Head, Tail} -> {Head, {Head, Tail}};
+                        empty        -> fin
+                    end
+            end,
+    new(Dedup, {make_ref(), new(L0)}).
 
 -spec to_list(lazy_list(T)) -> [T].
 to_list(#lazy_list{} = L) ->
@@ -239,6 +312,11 @@ to_list(#lazy_list{} = L) ->
 sum(#lazy_list{} = L) ->
     fold(fun(X, Acc) -> X + Acc end, 0, L).
 
+-spec length(lazy_list(number())) -> number().
+length(#lazy_list{} = L) ->
+    fold(fun(_, Acc) -> 1 + Acc end, 0, L).
+
+%%%_* Generators -------------------------------------------------------
 -spec seq() -> lazy_list(integer()).
 seq() ->
     new(lazy_gens:seq()).
@@ -266,6 +344,14 @@ rand(N) ->
 -spec rand(pos_integer(), rand:state()) -> lazy_list(pos_integer()).
 rand(N, State) ->
     new(lazy_gens:rand(N, State)).
+
+-spec fib() -> lazy_list(pos_integer()).
+fib() ->
+    new(lazy_gens:fib()).
+
+-spec perms([T]) -> lazy_list([T]).
+perms(L) ->
+    new(lazy_gens:perms(L)).
 
 %%%_* Internal =========================================================
 take(0, Vals, L) ->
@@ -349,4 +435,11 @@ seq_test() ->
     L = seq(1,1,3),
     [1,2,3] = to_list(L).
 
+perms_test() ->
+    [[]]           = to_list(perms([])),
+    [[1]]          = to_list(perms([1])),
+    [[1,2], [2,1]] = to_list(perms([1,2])),
+    [[1,2,3], [1,3,2], [3,1,2], [3,2,1], [2,3,1], [2,1,3]] =
+        to_list(perms([2,3,1])),
+    ok.
 -endif.
