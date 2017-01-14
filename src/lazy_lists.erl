@@ -430,6 +430,12 @@ fizzbuzz_test() ->
     fizz     = nth_(999999, L0),
     999998   = nth_(999998, L0).
 
+append_test() ->
+    [1,2,3,4,5,6] = to_list(append([1,2,3], [4,5,6])).
+
+repeat_test() ->
+    [a,b,c,a,b,c,a] = take_(7, repeat([a,b,c])).
+
 cons_test() ->
     L       = seq(),
     {1, L2} = decons(L),
