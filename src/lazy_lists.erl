@@ -8,16 +8,19 @@
 -export([new/1, new/2]).
 -export([head/1]).
 -export([tail/1]).
+-export([last/1]).
 -export([filter/2]).
+-export([partition/2]).
 -export([nth/2, nth_/2]).
 -export([take/2, take_/2]).
 -export([drop/2]).
 -export([drop_while/2]).
 -export([take_while/2, take_while_/2]).
 -export([map/2]).
+-export([foreach/2]).
 -export([fold/3]).
 -export([uncons/1]).
--export([to_list/1]).
+-export([expand/1]).
 -export([limit/2]).
 -export([while/2]).
 -export([zip/2]).
@@ -29,10 +32,19 @@
 -export([chunk/2]).
 -export([every/2]).
 -export([interleave/2]).
--export([repeat/1]).
+-export([join/2]).
+-export([cycle/1]).
 -export([dedup/1]).
+-export([member/2]).
+-export([max/1]).
+-export([min/1]).
+-export([any/2]).
+-export([all/2]).
+-export([find/2]).
+-export([empty/0]).
 
 %%%_* Generators -------------------------------------------------------
+-export([duplicate/1, duplicate/2]).
 -export([seq/0, seq/1, seq/2, seq/3]).
 -export([rand/0, rand/1, rand/2]).
 -export([fib/0]).
@@ -80,7 +92,7 @@ append(A0, B0) ->
                          empty        -> fin;
                          {Head, Tail} -> {Head, Tail}
                      end;
-                ({A, B}) ->
+                ({#lazy_list{} = A,  #lazy_list{} = B}) ->
                      case uncons(A) of
                          empty ->
                              case uncons(B) of
@@ -126,6 +138,11 @@ tail(#lazy_list{} = L) ->
     {_Head, Tail} = uncons(L),
     Tail.
 
+-spec last(lazy_list(T)) -> T.
+last(#lazy_list{} = L) ->
+    {ok, X} = fold(fun(X, _) -> {ok, X} end, empty, L),
+    X.
+
 -spec filter(predicate(T), maybe_lazy_list(T)) -> lazy_list(T).
 filter(Pred, L0) when is_function(Pred, 1) ->
     Filter = fun Filter(L) ->
@@ -141,6 +158,11 @@ filter(Pred, L0) when is_function(Pred, 1) ->
              end,
     new(Filter, new(L0)).
 
+-spec partition(predicate(T), maybe_lazy_list(T)) ->
+                       {lazy_list(T), lazy_list(T)}.
+partition(Pred, L0) when is_function(Pred, 1) ->
+    {filter(Pred, L0), filter(fun(X) -> not Pred(X) end, L0)}.
+
 -spec map(fun((A) -> B), maybe_lazy_list(A)) -> lazy_list(B).
 map(Fun, L0) when is_function(Fun, 1) ->
     Map = fun(L) ->
@@ -150,6 +172,10 @@ map(Fun, L0) when is_function(Fun, 1) ->
                   end
           end,
     new(Map, new(L0)).
+
+-spec foreach(fun((T) -> term()), maybe_lazy_list(T)) -> ok.
+foreach(Fun, L) ->
+    fold(fun(X, Acc) -> Fun(X), Acc end, ok, L).
 
 -spec fold(fun((T, Acc) -> Acc), Acc, lazy_list(T)) -> Acc.
 fold(Fun, Acc, #lazy_list{} = L0) when is_function(Fun, 2) ->
@@ -281,9 +307,28 @@ interleave(A0, B0) ->
                  end,
     new(Interleave, {new(A0), new(B0)}).
 
--spec repeat(maybe_lazy_list(T)) -> lazy_list(T).
-repeat(L0) ->
-    Repeat = fun(L) ->
+-spec join(A, maybe_lazy_list(B)) -> lazy_list(A | B).
+join(X, L0) ->
+    Join = fun({odd, {Head, Tail}}) ->
+                   {Head, {even, uncons(Tail)}};
+              ({even, {Head, Tail}}) ->
+                   {X, {odd, {Head, Tail}}};
+              ({_, empty}) ->
+                   fin
+           end,
+   new(Join, {odd, uncons(new(L0))}).
+
+-spec duplicate(non_neg_integer(), T) -> lazy_list(T).
+duplicate(Length, X) ->
+    limit(Length, duplicate(X)).
+
+-spec duplicate(T) -> lazy_list(T).
+duplicate(X) ->
+    new(fun(Acc) -> {X, Acc} end).
+
+-spec cycle(maybe_lazy_list(T)) -> lazy_list(T).
+cycle(L0) ->
+    Cycle = fun(L) ->
                      case uncons(L) of
                          {Head, Tail} ->
                              {Head, Tail};
@@ -296,7 +341,7 @@ repeat(L0) ->
                              end
                      end
              end,
-    new(Repeat, new(L0)).
+    new(Cycle, new(L0)).
 
 -spec dedup(maybe_lazy_list(T)) -> lazy_list(T).
 dedup(L0) ->
@@ -309,9 +354,9 @@ dedup(L0) ->
             end,
     new(Dedup, {make_ref(), new(L0)}).
 
--spec to_list(lazy_list(T)) -> [T].
-to_list(#lazy_list{} = L) ->
-    to_list([], L).
+-spec expand(lazy_list(T)) -> [T].
+expand(#lazy_list{} = L) ->
+    expand([], L).
 
 -spec sum(lazy_list(number())) -> number().
 sum(#lazy_list{} = L) ->
@@ -320,6 +365,64 @@ sum(#lazy_list{} = L) ->
 -spec length(lazy_list(number())) -> number().
 length(#lazy_list{} = L) ->
     fold(fun(_, Acc) -> 1 + Acc end, 0, L).
+
+-spec member(term(), lazy_list()) -> boolean().
+member(X, #lazy_list{} = L) ->
+    case uncons(L) of
+        {X, _}    -> true;
+        {_, Tail} -> member(X, Tail);
+        empty     -> false
+    end.
+
+-spec max(lazy_list(T)) -> T.
+max(#lazy_list{} = L) ->
+    {Head, Tail} = uncons(L),
+    fold(fun(X, Acc) -> max(X, Acc) end, Head, Tail).
+
+-spec min(lazy_list(T)) -> T.
+min(#lazy_list{} = L) ->
+    {Head, Tail} = uncons(L),
+    fold(fun(X, Acc) -> min(X, Acc) end, Head, Tail).
+
+-spec any(predicate(T), lazy_list(T)) -> boolean().
+any(Pred, #lazy_list{} = L) ->
+    case uncons(L) of
+        {Head, Tail} ->
+            case Pred(Head) of
+                true  -> true;
+                false -> any(Pred, Tail)
+            end;
+        empty ->
+            false
+    end.
+
+-spec all(predicate(T), lazy_list(T)) -> boolean().
+all(Pred, #lazy_list{} = L) ->
+    case uncons(L) of
+        {Head, Tail} ->
+            case Pred(Head) of
+                true  -> all(Pred, Tail);
+                false -> false
+            end;
+        empty ->
+            true
+    end.
+
+-spec find(predicate(T), lazy_list(T)) -> {ok, T} | error.
+find(Pred, #lazy_list{} = L) ->
+    case uncons(L) of
+        {Head, Tail} ->
+            case Pred(Head) of
+                true  -> {ok, Head};
+                false -> find(Pred, Tail)
+            end;
+        empty ->
+            error
+    end.
+
+-spec empty() -> lazy_list().
+empty() ->
+    new([]).
 
 %%%_* Generators -------------------------------------------------------
 -spec seq() -> lazy_list(integer()).
@@ -378,9 +481,9 @@ take_while(Pred, Vals, L0)  ->
             {lists:reverse(Vals), L0}
     end.
 
-to_list(Vals, L0) ->
+expand(Vals, L0) ->
     case uncons(L0) of
-        {Val, L} -> to_list([Val|Vals], L);
+        {Val, L} -> expand([Val|Vals], L);
         empty    -> lists:reverse(Vals)
     end.
 
@@ -397,7 +500,7 @@ lazy_lists_test() ->
              end, L1),
     {[1, 3, 5, 7, 9], L2}       = take(5, LX),
     [1, 3, 5, 7, 9]             = take_(5, LX),
-    [1, 3, 5, 7, 9]             = to_list(limit(5, LX)),
+    [1, 3, 5, 7, 9]             = expand(limit(5, LX)),
     {[11, 13, 15, 17, 19], _}   = take(5, L2),
     {[1, beep, 11, 13, 17], L3} = take(5, L),
     {[19, 23, 29, 31, 37], _}   = take(5, L3),
@@ -405,13 +508,13 @@ lazy_lists_test() ->
 
 init_list_test() ->
     L       = new([1,2,3]),
-    [1,2,3] = to_list(L).
+    [1,2,3] = expand(L).
 
 fold_test() ->
     L = new([1,2,3]),
     6 = fold(fun(V, Acc) -> Acc + V end, 0, L).
 
-lazy_lists_take_while_test() ->
+take_while_test() ->
     L             = seq(),
     {[1,2,3], L2} = take_while(fun(X) -> X < 4 end, L),
     {[], _}       = take_while(fun(X) -> X < 4 end, L2).
@@ -422,7 +525,7 @@ fizzbuzz_test() ->
                   (X) when                X rem 5 =:= 0 -> buzz;
                   (X)                                   -> X
                end,
-    L0 = map(FizzBuzz, seq()),
+    L0       = map(FizzBuzz, seq()),
     fizz     = nth_(9, L0),
     14       = nth_(14, L0),
     fizzbuzz = nth_(15, L0),
@@ -431,26 +534,87 @@ fizzbuzz_test() ->
     999998   = nth_(999998, L0).
 
 append_test() ->
-    [1,2,3,4,5,6] = to_list(append([1,2,3], [4,5,6])).
+    [1,2,3,4,5,6] = expand(append([1,2,3], [4,5,6])).
 
-repeat_test() ->
-    [a,b,c,a,b,c,a] = take_(7, repeat([a,b,c])).
+duplicate_test() ->
+    [a,a,a,a,a,a,a] = take_(7, duplicate(a)),
+    [a,a,a,a,a,a,a] = expand(duplicate(7, a)).
+
+any_test() ->
+    true  = any(fun(X) -> X > 8 end, seq()),
+    false = any(fun(X) -> X > 8 end, limit(8, seq())).
+
+all_test() ->
+    true  = all(fun(X) -> X < 9 end, limit(8, seq())),
+    false = all(fun(X) -> X < 8 end, limit(8, seq())).
+
+cycle_test() ->
+    [a,b,c,a,b,c,a] = take_(7, cycle([a,b,c])).
 
 cons_test() ->
     L       = seq(),
     {1, L2} = uncons(L),
     [1,2,3] = take_(3, L),
-    [1,2,3] = take_(3, cons(1, L2)).
+    [1,2,3] = take_(3, cons(1, L2)),
+    [1,2,3] = expand(cons(1, cons(2, cons(3, empty())))).
 
 seq_test() ->
     L = seq(1,1,3),
-    [1,2,3] = to_list(L).
+    [1,2,3] = expand(L).
+
+interleave_test() ->
+    []                  = expand(interleave([], [])),
+    [1,a,2,b,3,c]       = expand(interleave([1,2,3], [a,b,c])),
+    [1,a,2,b,3,c,d,e,f] = expand(interleave([1,2,3], [a,b,c,d,e,f])),
+    [1,a,2,b,3,c,4,5,6] = expand(interleave([1,2,3,4,5,6], [a,b,c])).
+
+
+join_test() ->
+    []          = expand(join(x, [])),
+    [1,x,2,x,3] = expand(join(x, seq(1,1,3))).
 
 perms_test() ->
-    [[]]           = to_list(perms([])),
-    [[1]]          = to_list(perms([1])),
-    [[1,2], [2,1]] = to_list(perms([1,2])),
+    [[]]           = expand(perms([])),
+    [[1]]          = expand(perms([1])),
+    [[1,2], [2,1]] = expand(perms([1,2])),
     [[1,2,3], [1,3,2], [3,1,2], [3,2,1], [2,3,1], [2,1,3]] =
-        to_list(perms([2,3,1])),
+        expand(perms([2,3,1])),
     ok.
+
+find_test() ->
+    {ok, 4} = find(fun(X) -> X > 3 end, seq()),
+    error   = find(fun(X) -> X > 3 end, seq(1,1,3)).
+
+member_test() ->
+    false = member(4, empty()),
+    true  = member(4, seq()),
+    false = member(4, seq(1,1,3)).
+
+partition_test() ->
+    {A, B} = partition(fun(X) -> X rem 2 =:= 0 end, seq()),
+    [2,4,6] = take_(3, A),
+    [1,3,5] = take_(3, B).
+
+length_test() ->
+    0 = ?MODULE:length(empty()),
+    3 = ?MODULE:length(new([1,2,3])).
+
+zip_test() ->
+    L = zip([a,b,c], seq()),
+    [{a,1}, {b,2}, {c,3}] = expand(L),
+    {A, B} = unzip(L),
+    [a,b,c] = expand(A),
+    [1,2,3] = expand(B).
+
+fib_test() ->
+    [1,1,2,3,5,8,13] = take_(7, fib()).
+
+head_test() ->
+    ?assertError(_, head(empty())),
+    1 = head(seq()).
+
+last_test() ->
+    ?assertError(_, last(empty())),
+    3 = last(new([1,2,3])).
+
 -endif.
