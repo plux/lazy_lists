@@ -7,6 +7,7 @@
 %%%_* Exports ==========================================================
 -export([seq/0, seq/1, seq/2, seq/3]).
 -export([rand/0, rand/1, rand/2]).
+-export([iterate/2]).
 -export([fib/0]).
 -export([perms/1]).
 -export([read_lines/1]).
@@ -55,6 +56,12 @@ rand(N) ->
 rand(N, State0) ->
     fun(undefined) -> rand:uniform_s(N, State0);
        (State)     -> rand:uniform_s(N, State)
+    end.
+
+-spec iterate(fun((T) -> T), T) -> gen(T).
+iterate(Fun, X) when is_function(Fun, 1) ->
+    fun(undefined) -> {X, Fun(X)};
+       (Acc)       -> {Acc, Fun(Acc)}
     end.
 
 -spec fib() -> gen(pos_integer()).
