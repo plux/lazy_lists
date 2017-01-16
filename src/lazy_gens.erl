@@ -27,13 +27,16 @@ seq(Start) ->
     seq(Start, 1).
 
 -spec seq(integer(), integer()) -> gen(integer()).
-seq(Start, Step) ->
+seq(Start, Step) when is_integer(Start),
+                      is_integer(Step) ->
     fun(undefined) -> {Start, Start};
        (Acc)       -> {Acc+Step, Acc+Step}
     end.
 
 -spec seq(integer(), integer(), integer()) -> gen(integer()).
-seq(Start, Step, End) ->
+seq(Start, Step, End) when is_integer(Start),
+                           is_integer(Step),
+                           is_integer(End) ->
     fun(undefined) -> {Start, Start};
        (Acc) when Step > 0, Acc >= End -> fin;
        (Acc) when Step < 0, Acc =< End -> fin;
@@ -88,7 +91,7 @@ read_lines(Filename) ->
         F(IoDevice) ->
             case file:read_line(IoDevice) of
                 {ok, Line} ->
-                    {Line, IoDevice};
+                    {binary:part(Line, 0, max(0, size(Line)-1)), IoDevice};
                 eof ->
                     file:close(IoDevice),
                     fin

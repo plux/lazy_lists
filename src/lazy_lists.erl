@@ -42,6 +42,7 @@
 -export([all/2]).
 -export([find/2]).
 -export([empty/0]).
+-export([delay/2]).
 
 %%%_* Generators -------------------------------------------------------
 -export([duplicate/1, duplicate/2]).
@@ -424,6 +425,10 @@ find(Pred, #lazy_list{} = L) ->
 -spec empty() -> lazy_list().
 empty() ->
     new([]).
+
+-spec delay(timeout(), lazy_list(T)) -> lazy_list(T).
+delay(Ms, L) ->
+    map(fun(X) -> timer:sleep(Ms), X end, L).
 
 %%%_* Generators -------------------------------------------------------
 -spec seq() -> lazy_list(integer()).
