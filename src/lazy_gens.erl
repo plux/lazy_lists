@@ -9,6 +9,7 @@
 -export([rand/0, rand/1, rand/2]).
 -export([fib/0]).
 -export([perms/1]).
+-export([read_lines/1]).
 
 -export_type([gen/0, gen/1]).
 
@@ -76,6 +77,21 @@ perms(L0) ->
                     Array = scan_flip_larger(X, move(Array0, I)),
                     {Ret, _} = lists:unzip(array:to_list(Array)),
                     {Ret, Array}
+            end
+    end.
+
+-spec read_lines(file:name_all()) -> gen([binary()]).
+read_lines(Filename) ->
+    fun F(undefined) ->
+            {ok, IoDevice0} = file:open(Filename, [read, binary]),
+            F(IoDevice0);
+        F(IoDevice) ->
+            case file:read_line(IoDevice) of
+                {ok, Line} ->
+                    {Line, IoDevice};
+                eof ->
+                    file:close(IoDevice),
+                    fin
             end
     end.
 

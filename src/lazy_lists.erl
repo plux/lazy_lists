@@ -49,6 +49,7 @@
 -export([rand/0, rand/1, rand/2]).
 -export([fib/0]).
 -export([perms/1]).
+-export([read_lines/1]).
 
 %%%_* Types ------------------------------------------------------------
 -export_type([lazy_list/0, lazy_list/1]).
@@ -460,6 +461,10 @@ fib() ->
 -spec perms([T]) -> lazy_list([T]).
 perms(L) ->
     new(lazy_gens:perms(L)).
+
+-spec read_lines(file:name_all()) -> lazy_list([binary()]).
+read_lines(Filename) ->
+    new(lazy_gens:read_lines(Filename)).
 
 %%%_* Internal =========================================================
 take(0, Vals, L) ->
