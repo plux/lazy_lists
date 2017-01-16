@@ -1,0 +1,6 @@
+language: erlang
+otp_release:
+   - 19.1
+   - 18.3
+   - 17.5
+script: "./rebar3 eunit"
